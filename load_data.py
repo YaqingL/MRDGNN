@@ -26,6 +26,7 @@ class DataLoader:
                 n_rel += 1
         # Create a reverse mapping from relation ID to relation name
         self.id2relation = {v: k for k, v in self.relation2id.items()}
+        self.id2entity = {v: k for k, v in self.entity2id.items()}
 
         self.n_ent = n_ent
         self.n_rel = n_rel

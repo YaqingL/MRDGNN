@@ -129,7 +129,6 @@ if __name__ == '__main__':
     # else:
     #     print("No checkpoint found. Starting training from scratch.")
 
-    # best_mrr = 0
     best_mrr_per_relation = {'indication': 0, 'contraindication': 0}
     best_str_per_relation = {'indication': '', 'contraindication': ''}
 
@@ -156,13 +155,5 @@ if __name__ == '__main__':
 
 
     for rel, best_mrr in best_mrr_per_relation.items():
-        # line1 = f'Best MRR for {rel}: {best_mrr:.4f}'
-        # line2 = f'Best metrics for {rel}: {best_str_per_relation[rel]}'
-        #
-        # print(line1)
-        # print(line2)
-
-        # f.write(line1 + '\n')
-        # f.write(line2 + '\n')
         logging.info(f'Best MRR for {rel}: {best_mrr:.4f}')
         logging.info(f'Best metrics for {rel}: {best_str_per_relation[rel]}')

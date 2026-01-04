@@ -31,6 +31,46 @@ def cal_auc_aupr(scores, labels):
 
     return auc, aupr
 
+def global_auc_aupr_with_neg_sampling(
+    scores, labels, neg_ratio=1, seed=42
+):
+    """
+    scores: (num_queries, n_ent)
+    labels: (num_queries, n_ent), 1 for positive, 0 for unknown
+    neg_ratio: 1, 5, 10
+    """
+    rng = np.random.RandomState(seed)
+
+    all_scores = []
+    all_labels = []
+
+    for score_vec, label_vec in zip(scores, labels):
+        pos_idx = np.where(label_vec == 1)[0]
+        if len(pos_idx) == 0:
+            continue
+
+        neg_pool = np.where(label_vec == 0)[0]
+        if len(neg_pool) == 0:
+            continue
+
+        num_neg = min(len(neg_pool), neg_ratio * len(pos_idx))
+        neg_idx = rng.choice(neg_pool, size=num_neg, replace=False)
+
+        sel_idx = np.concatenate([pos_idx, neg_idx])
+
+        all_scores.append(score_vec[sel_idx])
+        all_labels.append(label_vec[sel_idx])
+
+    if len(all_scores) == 0:
+        return None, None
+
+    all_scores = np.concatenate(all_scores)
+    all_labels = np.concatenate(all_labels)
+
+    auc = roc_auc_score(all_labels, all_scores)
+    aupr = average_precision_score(all_labels, all_scores)
+
+    return auc, aupr
 
 
 

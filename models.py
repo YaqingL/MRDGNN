@@ -35,8 +35,6 @@ class GNNLayer(torch.nn.Module):
         message = hs + hr
         alpha = torch.sigmoid(self.w_alpha(nn.ReLU()(self.Ws_attn(hs) + self.Wr_attn(hr) + self.Wqr_attn(h_qr))))  # attention
         # alpha = torch.sigmoid(self.w_alpha(nn.ReLU()(self.Ws_attn(hs) + self.Wr_attn(hr)))) #ablation study remove h_qr
-        # replace to softmax
-        # alpha = torch.softmax(self.w_alpha(nn.ReLU()(self.Ws_attn(hs) + self.Wr_attn(hr) + self.Wqr_attn(h_qr))), dim=1)
 
         message = alpha * message
 
@@ -56,7 +54,6 @@ class MRD_GNN(torch.nn.Module):
         self.loader = loader
         self.use_layer_attention = use_layer_attention
 
-        # pretrain embedding
         if node_embeddings is not None:
             self.node_embeddings = torch.tensor(node_embeddings, dtype=torch.float32).to('cuda', non_blocking=True)
             #self.node_embeddings = torch.FloatTensor(node_embeddings).cuda()
@@ -75,10 +72,10 @@ class MRD_GNN(torch.nn.Module):
         self.gnn_layers = nn.ModuleList(self.gnn_layers)
 
         # layer Attention: simple learnable weights
-        # Only used when use_layer_attention=True
         if use_layer_attention:
             self.layer_attn_weights = nn.Parameter(torch.ones(self.n_layer))
-
+        else:
+            self.layer_attn_weights = torch.ones(self.n_layer).cuda()
 
         self.dropout = nn.Dropout(params.dropout)
         self.W_final = nn.Linear(self.hidden_dim, 1, bias=False)         # get score
@@ -91,7 +88,7 @@ class MRD_GNN(torch.nn.Module):
 
         all_hidden_states = []
 
-        for j in range(1, self.n_layer + 1):  # 1到n_layer
+        for j in range(1, self.n_layer + 1):
             if self.node_embeddings is not None:
                 hidden = self.node_embeddings[q_sub].cuda()
             else:
@@ -100,7 +97,7 @@ class MRD_GNN(torch.nn.Module):
             h0 = torch.zeros((1, n, self.hidden_dim)).cuda()
             nodes = torch.cat([torch.arange(n).unsqueeze(1).cuda(), q_sub.unsqueeze(1)], 1)
 
-            for i in range(j):  # 递归到第j跳
+            for i in range(j):
                 nodes, edges, old_nodes_new_idx = self.loader.get_neighbors(nodes.data.cpu().numpy(), mode=mode)
                 hidden = self.gnn_layers[i](q_sub, q_rel, hidden, edges, nodes.size(0), old_nodes_new_idx)
                 h0 = torch.zeros(1, nodes.size(0), hidden.size(1)).cuda().index_copy_(1, old_nodes_new_idx, h0)

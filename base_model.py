@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import torch
 import numpy as np
 import time
@@ -41,14 +43,12 @@ class BaseModel(object):
         batch_size = self.n_batch
         n_batch = self.loader.n_train // batch_size + (self.loader.n_train % batch_size > 0)
 
-        # indication_id = self.loader.relation2id['indication']
-        # contraindication_id = self.loader.relation2id['contraindication']
 
         t_time = time.time()
         self.model.train()
+        torch.cuda.reset_peak_memory_stats()
 
         print("n_batch: {}".format(n_batch))
-        #for i in range(2):
         for i in range(n_batch):
             if i % 100 == 0:
                 print("batch: {}".format(i))
@@ -56,12 +56,6 @@ class BaseModel(object):
             end = min(self.loader.n_train, (i+1)*batch_size)
             batch_idx = np.arange(start, end)
             triple = self.loader.get_batch(batch_idx)
-
-            # indication_mask = (triple[:, 1] == indication_id)
-            # contraindication_mask = (triple[:, 1] == contraindication_id)
-            #
-            # indication_triples = triple[indication_mask]
-            # contraindication_triples = triple[contraindication_mask]
 
             #self.model.zero_grad()
 
@@ -81,41 +75,6 @@ class BaseModel(object):
 
             logging.info('batch: {}, learning rate: {}'.format(i, lr))
 
-            # # indication
-            # if len(indication_triples) > 0:
-            #     scores_indication = self.model(indication_triples[:, 0], indication_triples[:, 1])
-            #     pos_scores_indication = scores_indication[
-            #         torch.arange(len(scores_indication)).cuda(),
-            #         torch.LongTensor(indication_triples[:, 2]).cuda()
-            #     ]
-            #     max_n_indication = torch.max(scores_indication, 1, keepdim=True)[0]
-            #     loss_indication = torch.sum(
-            #         -pos_scores_indication + max_n_indication + torch.log(
-            #             torch.sum(torch.exp(scores_indication - max_n_indication), 1))
-            #     )
-            # else:
-            #     loss_indication = torch.zeros(1, device='cuda', requires_grad=True)
-            #
-            # #  contraindication
-            # if len(contraindication_triples) > 0:
-            #     scores_contraindication = self.model(contraindication_triples[:, 0], contraindication_triples[:, 1])
-            #     pos_scores_contraindication = scores_contraindication[
-            #         torch.arange(len(scores_contraindication)).cuda(),
-            #         torch.LongTensor(contraindication_triples[:, 2]).cuda()
-            #     ]
-            #     max_n_contraindication = torch.max(scores_contraindication, 1, keepdim=True)[0]
-            #     loss_contraindication = torch.sum(
-            #         -pos_scores_contraindication + max_n_contraindication + torch.log(
-            #             torch.sum(torch.exp(scores_contraindication - max_n_contraindication), 1))
-            #     )
-            # else:
-            #     loss_contraindication = torch.zeros(1, device='cuda', requires_grad=True)
-            #
-            # # total loss
-            # loss = loss_indication + loss_contraindication
-            # loss.backward()
-            # self.optimizer.step()
-
             # avoid NaN
             time1 = time.time()
             for p in self.model.parameters():
@@ -129,11 +88,13 @@ class BaseModel(object):
             epoch_loss += loss.item()
         self.scheduler.step()
         self.t_time += time.time() - t_time
+        train_peak_mem = torch.cuda.max_memory_allocated() / 1024 ** 2
+        print(f"[MEM] Training peak GPU memory: {train_peak_mem:.2f} MB")
 
         valid_per_mrr, out_str = self.evaluate()
         # test_per_mrr, out_str = self.evaluate()
         self.loader.shuffle_train()
-        return valid_per_mrr, out_str
+        return valid_per_mrr, out_str, train_peak_mem
 
     def evaluate(self, ):
         global scores, objs, rels
@@ -146,6 +107,7 @@ class BaseModel(object):
         # n_data = self.n_valid
         n_batch = self.n_valid // batch_size + (self.n_valid % batch_size > 0)
         self.model.eval()
+        torch.cuda.reset_peak_memory_stats()
         i_time = time.time()
 
         for i in range(n_batch):
@@ -181,8 +143,11 @@ class BaseModel(object):
                         objs_per_relation[rel_name].append(obj)
 
         v_mrr_per_relation = {}# Calculate metrics for each relation
-        v_auc_per_relation = {}
-        v_aupr_per_relation = {}
+        # v_auc_per_relation = {}
+        # v_aupr_per_relation = {}
+        v_auc_per_relation = defaultdict(dict)
+        v_aupr_per_relation = defaultdict(dict)
+
         out_str = ''
 
         for rel_name, ranks in metrics_per_relation.items():
@@ -191,15 +156,32 @@ class BaseModel(object):
                 v_mrr, v_h1, v_h3, v_h10 = cal_performance(ranking)
                 v_mrr_per_relation[rel_name] = v_mrr
                 out_str += f'[VALID - {rel_name}] MRR: {v_mrr:.4f}, H@1: {v_h1:.4f}, H@3: {v_h3:.4f}, H@10: {v_h10:.4f}\n'
-                # calculate AUC and AUPR
+                # calculate AUC and AUPR(global)
                 rel_scores = np.array(scores_per_relation[rel_name])
                 rel_objs = np.array(objs_per_relation[rel_name])
 
                 if rel_scores.size > 0 and rel_objs.size > 0:
-                    v_auc, v_aupr = cal_auc_aupr(rel_scores.flatten(), rel_objs.flatten())
-                    v_auc_per_relation[rel_name] = v_auc
-                    v_aupr_per_relation[rel_name] = v_aupr
-                    out_str += f'[VALID - {rel_name}] AUC: {v_auc:.4f}, AUPR: {v_aupr:.4f}\n'
+                    # v_auc, v_aupr = cal_auc_aupr(rel_scores.flatten(), rel_objs.flatten())
+                    # v_auc_per_relation[rel_name] = v_auc
+                    # v_aupr_per_relation[rel_name] = v_aupr
+                    # out_str += f'[VALID - {rel_name}] AUC: {v_auc:.4f}, AUPR: {v_aupr:.4f}\n'
+                    for neg_ratio in [1]:
+                        v_auc, v_aupr = global_auc_aupr_with_neg_sampling(
+                            rel_scores,
+                            rel_objs,
+                            neg_ratio=neg_ratio
+                        )
+
+                        if v_auc is not None:
+                            v_auc_per_relation[rel_name][neg_ratio] = v_auc
+                            v_aupr_per_relation[rel_name][neg_ratio] = v_aupr
+
+                            out_str += (
+                                f'[VALID - {rel_name}] '
+                                f'AUC@1:{neg_ratio}: {v_auc:.4f}, '
+                                f'AUPR@1:{neg_ratio}: {v_aupr:.4f}\n'
+                            )
+
 
         # n_data = self.n_test
         n_batch = self.n_test // batch_size + (self.n_test % batch_size > 0)
@@ -239,8 +221,10 @@ class BaseModel(object):
                         objs_per_relation[rel_name].append(obj)
 
         t_mrr_per_relation = {}
-        t_auc_per_relation = {}
-        t_aupr_per_relation = {}
+        # t_auc_per_relation = {}
+        # t_aupr_per_relation = {}
+        t_auc_per_relation = defaultdict(dict)
+        t_aupr_per_relation = defaultdict(dict)
 
         for rel_name, ranks in metrics_per_relation.items():
             if ranks:
@@ -254,14 +238,36 @@ class BaseModel(object):
                 rel_objs = np.array(objs_per_relation[rel_name])
 
                 if rel_scores.size > 0 and rel_objs.size > 0:
-                    t_auc, t_aupr = cal_auc_aupr(rel_scores.flatten(), rel_objs.flatten())
-                    t_auc_per_relation[rel_name] = t_auc
-                    t_aupr_per_relation[rel_name] = t_aupr
-                    out_str += f'[TEST - {rel_name}] AUC: {t_auc:.4f}, AUPR: {t_aupr:.4f}\n'
+                    # all_unknown as negatives
+                    # t_auc, t_aupr = cal_auc_aupr(rel_scores.flatten(), rel_objs.flatten())
+                    # t_auc_per_relation[rel_name] = t_auc
+                    # t_aupr_per_relation[rel_name] = t_aupr
+                    # out_str += f'[TEST - {rel_name}] AUC: {t_auc:.4f}, AUPR: {t_aupr:.4f}\n'
+                    for neg_ratio in [1]:
+                        t_auc, t_aupr = global_auc_aupr_with_neg_sampling(
+                            rel_scores,
+                            rel_objs,
+                            neg_ratio=neg_ratio
+                        )
 
+                        if t_auc is not None:
+                            t_auc_per_relation[rel_name][neg_ratio] = t_auc
+                            t_aupr_per_relation[rel_name][neg_ratio] = t_aupr
+
+                            out_str += (
+                                f'[TEST - {rel_name}] '
+                                f'AUC@1:{neg_ratio}: {t_auc:.4f}, '
+                                f'AUPR@1:{neg_ratio}: {t_aupr:.4f}\n'
+                            )
 
         i_time = time.time() - i_time
+        infer_peak_mem = torch.cuda.max_memory_allocated() / 1024 ** 2
+        num_queries = self.n_test + self.n_valid
+        throughput = num_queries / i_time
+
         out_str += f'[TIME] train: {self.t_time:.4f}, inference: {i_time:.4f}\n'
+        out_str += f'[MEM] inference peak GPU memory: {infer_peak_mem:.2f} MB\n'
+        out_str += f'[THROUGHPUT] {throughput:.2f} queries/sec\n'
 
         return v_mrr_per_relation, out_str
 
@@ -275,7 +281,7 @@ class BaseModel(object):
         print(f"Model saved to {file_path}")
 
     def load_model(self, file_path="checkpoint.pth"):
-        checkpoint = torch.load(file_path)
+        checkpoint = torch.load(file_path, map_location='cuda:0')
         self.current_epoch = checkpoint["epoch"]
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
