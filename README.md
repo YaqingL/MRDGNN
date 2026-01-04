@@ -1,4 +1,4 @@
-introduction will coming soon~
+Introduction will coming soon...
 
 ## Requirements 
 
