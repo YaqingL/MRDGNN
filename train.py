@@ -111,7 +111,7 @@ if __name__ == '__main__':
 
     # print(args.use_pretrain, args.layer_attention)
 
-    config_str = '%s, %s, %.4f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (str(args.use_pretrain), str(args.layer_attention), args.lr, args.decay_rate, args.lamb, args.hidden_dim, args.attn_dim, args.n_layer, args.n_batch, args.dropout, args.act)
+    config_str = '%s, %s, %s, %.4f, %.4f, %.6f,  %d, %d, %d, %d, %.4f,%s\n' % (str(dataset), str(args.use_pretrain), str(args.layer_attention), args.lr, args.decay_rate, args.lamb, args.hidden_dim, args.attn_dim, args.n_layer, args.n_batch, args.dropout, args.act)
     logging.info(config_str)
 
     # with open(args.perf_file, 'a+') as f:
@@ -135,7 +135,7 @@ if __name__ == '__main__':
     for epoch in range(start_epoch, args.n_epoch):
         logging.info(f'Epoch:{epoch}')
         model.current_epoch = epoch
-        mrr_per_relation, out_str = model.train_batch()
+        mrr_per_relation, out_str, train_mem = model.train_batch()
 
         logging.info(out_str)
 
