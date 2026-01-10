@@ -75,7 +75,7 @@ class MRD_GNN(torch.nn.Module):
         if use_layer_attention:
             self.layer_attn_weights = nn.Parameter(torch.ones(self.n_layer))
         else:
-            self.layer_attn_weights = torch.ones(self.n_layer).cuda()
+            self.layer_attn_weights = None
 
         self.dropout = nn.Dropout(params.dropout)
         self.W_final = nn.Linear(self.hidden_dim, 1, bias=False)         # get score
@@ -127,7 +127,7 @@ class MRD_GNN(torch.nn.Module):
             weighted_hidden = all_hidden_states_stacked * layer_attn_scores  # (n_layer, max_nodes, hidden_dim)
             final_representation = weighted_hidden.sum(dim=0)  # (max_nodes, hidden_dim)
         else:
-            final_representation = all_hidden_states_stacked[-1]  # (max_nodes, hidden_dim)
+            final_representation = all_hidden_states_stacked.mean(dim=0)
 
         scores = self.W_final(final_representation).squeeze(-1)
         scores_all = torch.zeros((n, self.loader.n_ent)).cuda()         # non_visited entities have 0 scores
