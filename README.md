@@ -1,4 +1,3 @@
-Introduction will coming soon...
 
 ## Requirements 
 
